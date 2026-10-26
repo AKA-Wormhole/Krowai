@@ -89,7 +89,7 @@ class GeminiLlm(private val http: OkHttpClient, base: String, private val key: S
             if (tools.isNotEmpty()) putJsonArray("tools") {
                 addJsonObject {
                     putJsonArray("functionDeclarations") {
-                        tools.forEach { t -> addJsonObject { put("name", t.name); put("description", t.description); put("parameters", t.schema) } }
+                        tools.forEach { t -> addJsonObject { put("name", t.name); put("description", t.description); put("parameters", cleanSchema(t.schema)) } }
                     }
                 }
             }
@@ -170,4 +170,17 @@ class GeminiLlm(private val http: OkHttpClient, base: String, private val key: S
             out.sorted()
         }
     }
+}
+
+/** Gemini's function declarations accept only a subset of JSON Schema: drop keywords it rejects (additionalProperties, $schema, default…), recursively. Property NAMES (e.g. a field called "title") are never touched. */
+private val GEMINI_DROP = setOf("additionalProperties", "\$schema", "default", "examples", "const")
+private fun cleanSchema(e: kotlinx.serialization.json.JsonElement): kotlinx.serialization.json.JsonObject {
+    fun walk(x: kotlinx.serialization.json.JsonElement, namesMap: Boolean): kotlinx.serialization.json.JsonElement = when (x) {
+        is kotlinx.serialization.json.JsonObject -> kotlinx.serialization.json.JsonObject(
+            x.filterKeys { namesMap || it !in GEMINI_DROP }.mapValues { (k, v) -> walk(v, !namesMap && k == "properties") }
+        )
+        is kotlinx.serialization.json.JsonArray -> kotlinx.serialization.json.JsonArray(x.map { walk(it, false) })
+        else -> x
+    }
+    return walk(e, false) as kotlinx.serialization.json.JsonObject
 }
