@@ -236,11 +236,7 @@ class GhTriggerWorkflow : Tool {
         schema(
             listOf("workflow"),
             "workflow" to prop("string", "Workflow file name under .github/workflows/ (e.g. build-apk.yml) or numeric workflow id"),
-            "inputs" to buildJsonObject {
-                put("type", "object")
-                put("description", "Optional workflow_dispatch inputs as string key/value pairs")
-                putJsonObject("additionalProperties") { put("type", "string") }
-            },
+            "inputs" to prop("string", "Optional workflow_dispatch inputs as a JSON object string of string key/value pairs, e.g. {\"mode\":\"debug\"}"),
         ),
     )
     override val kind = "actions"
@@ -254,7 +250,8 @@ class GhTriggerWorkflow : Tool {
         if (wf.toLongOrNull() == null && !WF_FILE.matches(wf) && !wf.endsWith(".yml") && !wf.endsWith(".yaml"))
             throw IllegalArgumentException("workflow should be a .yml filename or numeric id")
         val inputs = linkedMapOf<String, String>()
-        (a["inputs"] as? JsonObject)?.forEach { (k, v) -> (v as? JsonPrimitive)?.contentOrNull?.let { inputs[k] = it } }
+        val rawInputs: JsonObject? = (a["inputs"] as? JsonObject) ?: a.str("inputs")?.takeIf { it.isNotBlank() }?.let { s -> runCatching { Json.parseToJsonElement(s) as? JsonObject }.getOrNull() }
+        rawInputs?.forEach { (k, v) -> (v as? JsonPrimitive)?.contentOrNull?.let { inputs[k] = it } }
         return ToolOut(ActionOps.trigger(c.core.gh(), c.project, wf, inputs))
     }
 }
